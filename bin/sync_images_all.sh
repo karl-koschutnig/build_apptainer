@@ -1,8 +1,8 @@
 #!/bin/bash
 # Consolidate every built .sif (DSI Studio + every config/apps.conf app)
 # into one flat, browsable directory via hardlinks, so nobody has to know
-# which per-app subfolder under /data/local/container a given image lives
-# in. Hardlinks only ever ADD a new name for an existing inode - they never
+# which per-app subfolder under CONTAINER_DIR a given image lives in.
+# Hardlinks only ever ADD a new name for an existing inode - they never
 # move, rename, or touch the original file, so no project's pinned image
 # path (e.g. dsistuido's <project_root>/code/dsistudio/dsi_studio_image.json)
 # is ever affected by this, and nothing here can cause an in-progress
@@ -13,8 +13,16 @@
 # a moving "latest" target.
 set -euo pipefail
 
-CONTAINER_DIR="${CONTAINER_DIR:-/data/local/container}"
-DSISTUDIO_IMAGES_DIR="${DSISTUDIO_IMAGES_DIR:-/data/local/software/apptainer_images}"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PATHS_ENV="$REPO_DIR/config/paths.env"
+if [ ! -f "$PATHS_ENV" ]; then
+    echo "sync_images_all.sh: $PATHS_ENV not found. Copy config/paths.env.example to config/paths.env and edit it for your setup (see README Quick Setup)." >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+source "$PATHS_ENV"
+: "${CONTAINER_DIR:?CONTAINER_DIR not set in $PATHS_ENV}"
+: "${DSISTUDIO_IMAGES_DIR:?DSISTUDIO_IMAGES_DIR not set in $PATHS_ENV}"
 DSISTUDIO_SIF_DIR="${DSISTUDIO_SIF_DIR:-$DSISTUDIO_IMAGES_DIR/dsi_studio}"
 ALL_DIR="${ALL_DIR:-$DSISTUDIO_IMAGES_DIR/all}"
 
