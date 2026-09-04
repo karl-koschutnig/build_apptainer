@@ -29,6 +29,7 @@ source "$PATHS_ENV"
 : "${TMP_BASE:?TMP_BASE not set in $PATHS_ENV}"
 : "${DISK_CHECK_PATH:?DISK_CHECK_PATH not set in $PATHS_ENV}"
 : "${MIN_FREE_GB:?MIN_FREE_GB not set in $PATHS_ENV}"
+[[ "$MIN_FREE_GB" =~ ^[0-9]+$ ]] || { echo "check_and_build.sh: MIN_FREE_GB in $PATHS_ENV must be a plain integer (got '$MIN_FREE_GB')." >&2; exit 1; }
 : "${DSISTUDIO_BUILD_SCRIPT:?DSISTUDIO_BUILD_SCRIPT not set in $PATHS_ENV}"
 : "${DSISTUDIO_IMAGES_DIR:?DSISTUDIO_IMAGES_DIR not set in $PATHS_ENV}"
 
