@@ -13,11 +13,19 @@ It exists because building these images directly on the HPC is tricky
 Six things to configure, in order. Everything else in this README is
 background/design notes you can read later.
 
-1. **Pick your big-disk path.** Everything here defaults to `/data/local`
-   (images, tmp, logs, state). If your box uses a different mount, edit
-   these constants at the top of `bin/check_and_build.sh` before first run:
-   `TMP_BASE`, `DISK_CHECK_PATH`, `MIN_FREE_GB` — and use matching paths in
-   `config/apps.conf`'s `output_dir` column (step 2).
+1. **Configure your paths — `config/paths.env`.** Required before any
+   script here will run — there's no implicit `/data/local` default baked
+   in:
+   ```
+   cp config/paths.env.example config/paths.env
+   $EDITOR config/paths.env   # set CONTAINER_DIR, TMP_BASE, DISK_CHECK_PATH,
+                              # MIN_FREE_GB, DSISTUDIO_BUILD_SCRIPT, DSISTUDIO_IMAGES_DIR
+   ```
+   `bin/check_and_build.sh`, `bin/sync_images_all.sh`, and
+   `bin/sync_datalad.sh` all read this file and refuse to run without it.
+   Also use a matching path in `config/apps.conf`'s `output_dir` column
+   (step 2) — that file is independently edited, not driven by
+   `config/paths.env`.
 
 2. **Choose which Docker images to track — `config/apps.conf`.**
    One `name | docker_repo | tag_regex | output_dir` line per app (see the
@@ -80,14 +88,15 @@ release assets, log files, everything. Never rely on a tool's default
 (often system `/tmp` or `$HOME`) without explicitly overriding it.
 
 Already-verified compliant:
-- `TMP_BASE`/`STATE_DIR`/`LOG_DIR` in `bin/check_and_build.sh`, and its
+- `TMP_BASE` (from `config/paths.env`) and `STATE_DIR`/`LOG_DIR`
+  (repo-relative) in `bin/check_and_build.sh`, and its
   `state_tmp=$(mktemp -p "$STATE_DIR")` (not a bare `mktemp`, which defaults
   to system `/tmp`).
 - `vendor/build_apptainer.sh`'s per-build `APPTAINER_TMPDIR`/`TMPDIR`/
   `APPTAINER_CACHEDIR`/`SINGULARITY_CACHEDIR`, all under the `-t` path it's
-  given (`/data/local/tmp_big/apptainer_autobuild`).
+  given (`TMP_BASE`).
 - `installation/apptainer/build_image.sh` (DSI Studio) sets the same four
-  env vars to `/data/local/tmp_big/...` before invoking `apptainer build`.
+  env vars under `TMP_BASE` too before invoking `apptainer build`.
 
 When adding new tooling here, check every `mktemp`, every temp/cache env
 var a called binary respects, and any implicit default path before trusting
@@ -138,8 +147,7 @@ DSI Studio is checked/built too, but it's hardcoded into
 - **No Docker Hub tags to poll.** `dsistudio/dsistudio` on Docker Hub exists
   and is actively maintained, but it's a **CPU-only** build. GPU-accelerated
   tractography needs CUDA, so this pipeline instead wraps the maintainer's
-  prebuilt Linux release asset (CUDA-enabled) — see
-  `/data/local/software/dsistuido/installation/apptainer/dsi_studio.def`.
+  prebuilt Linux release asset (CUDA-enabled) — see `installation/apptainer/dsi_studio.def` alongside the build script at `DSISTUDIO_BUILD_SCRIPT` (`config/paths.env`).
 - **GitHub release tags don't reliably ship that asset.** The maintainer's
   release workflow builds Windows/Linux/Mac/Docker as independently
   toggleable jobs; e.g. the newest release as of 2026-08 (`2026.7.25`) is
@@ -151,30 +159,31 @@ DSI Studio is checked/built too, but it's hardcoded into
   releases newest-first via the GitHub API and uses whichever one currently
   has the asset.
 - **Output location and naming can't move.** Individual analysis projects
-  pin to a specific `/data/local/software/apptainer_images/dsi_studio/dsi_studio_hou-
-  <date>.sif`, recorded in each project's own
-  `code/dsistudio/dsi_studio_image.json`, and `build_image.sh` must never
-  overwrite an existing dated image. So unlike every other app here, this
-  one keeps its existing output dir instead of moving under
-  `/data/local/container/`, and versioning is by the build date embedded in
-  the binary itself (`dsi_studio --version`), not a Docker tag or Git ref.
+  pin to a specific `<DSISTUDIO_IMAGES_DIR>/dsi_studio/dsi_studio_hou-
+  <date>.sif` (`DSISTUDIO_IMAGES_DIR` from `config/paths.env`), recorded in
+  each project's own `code/dsistudio/dsi_studio_image.json`, and
+  `build_image.sh` must never overwrite an existing dated image. So unlike
+  every other app here, this one keeps its existing output dir instead of
+  moving under `CONTAINER_DIR`, and versioning is by the build date
+  embedded in the binary itself (`dsi_studio --version`), not a Docker tag
+  or Git ref.
 
 It still plugs into the same logging, `state/versions.json`, ntfy
-notification, and (for the `/data/local/container/` tree) datalad-sync
-machinery as everything else — it's just checked and named differently.
-One gap: `bin/sync_datalad.sh` only mirrors `/data/local/container/` by
-default, so new DSI Studio builds under `/data/local/software/
-apptainer_images/dsi_studio/` are *not* pushed to the datalad server by this
-pipeline.
+notification, and (for the `CONTAINER_DIR` tree) datalad-sync machinery as
+everything else — it's just checked and named differently. One gap:
+`bin/sync_datalad.sh` only mirrors `CONTAINER_DIR`, so new DSI Studio
+builds under `DSISTUDIO_IMAGES_DIR/dsi_studio/` are *not* pushed to the
+datalad server by this pipeline.
 
 ## Consolidated image directory
 
 After every real (non-dry-run) `check_and_build.sh` run, `bin/sync_images_all.sh`
 hardlinks every real, on-disk `.sif` -- every `config/apps.conf` app under
-`/data/local/container/*/` plus every DSI Studio image under
-`/data/local/software/apptainer_images/dsi_studio/` -- into one flat directory,
-`/data/local/software/apptainer_images/all/`, so nobody has to know which
-per-app subfolder a given image lives under.
+`CONTAINER_DIR/*/` plus every DSI Studio image under
+`DSISTUDIO_IMAGES_DIR/dsi_studio/` -- into one flat directory,
+`DSISTUDIO_IMAGES_DIR/all/`, so nobody has to know which per-app subfolder
+a given image lives under. (`CONTAINER_DIR` and `DSISTUDIO_IMAGES_DIR` are
+both set in `config/paths.env`.)
 
 It's pure addition, safe to re-run any time (`bin/sync_images_all.sh` by
 itself): a hardlink is just another name for an existing inode, so this
@@ -259,9 +268,9 @@ bin/check_and_build.sh --dry-run   # report what would be built, no build/API si
 bin/check_and_build.sh             # actually build anything missing
 ```
 
-It also aborts the whole run before touching Docker Hub if `/data/local`
-has less than 20G free (that filesystem is already at ~98% usage as of
-2026-07).
+It also aborts the whole run before touching Docker Hub if `DISK_CHECK_PATH`
+has less than `MIN_FREE_GB` free (both set in `config/paths.env`; on this
+server's setup that's `/data/local`, already at ~98% usage as of 2026-07).
 
 ### Concurrency: builds within a run, and across cron runs
 
@@ -279,8 +288,8 @@ Docker Hub from scratch and picks up anything still missing. If you want
 to force a check sooner after a skip, just run `bin/check_and_build.sh`
 by hand once the in-progress build finishes.
 
-All build temp/cache files go under `/data/local/tmp_big/apptainer_autobuild`
-(per-build subfolder, cleaned up by `build_apptainer.sh` itself on
+All build temp/cache files go under `TMP_BASE` (`config/paths.env`,
+per-build subfolder, cleaned up by `build_apptainer.sh` itself on
 success) -- never under `$HOME` or the primary/root filesystem.
 
 Logs: `logs/build.log` (rolling, timestamped, written by this script) and
@@ -324,8 +333,9 @@ notification, ntfy.sh sidesteps the whole problem.
 
 **Optional** — specific to MRI-Lab Graz's own datalad mirror, most users
 can skip this whole section. When a run builds one or more new images and
-`config/datalad.env` exists, it also pushes the local container store to
-the datalad server via `bin/sync_datalad.sh`, using
+`config/datalad.env` exists, it also pushes the local container store
+(`CONTAINER_DIR`, from `config/paths.env`) to the datalad server via
+`bin/sync_datalad.sh`, using
 `rsync -a --ignore-existing` (only adds files missing on the receiver --
 never overwrites or deletes anything already there). Set up once:
 ```
