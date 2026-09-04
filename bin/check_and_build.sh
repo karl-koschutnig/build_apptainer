@@ -18,21 +18,28 @@ LOG_FILE="$LOG_DIR/build.log"
 LOCK_FILE="$LOG_DIR/.lock"
 STATE_DIR="$REPO_DIR/state"
 STATE_FILE="$STATE_DIR/versions.json"
-TMP_BASE="/data/local/tmp_big/apptainer_autobuild"
-MIN_FREE_GB=20
-DISK_CHECK_PATH="/data/local"
+
+PATHS_ENV="$REPO_DIR/config/paths.env"
+if [ ! -f "$PATHS_ENV" ]; then
+    echo "check_and_build.sh: $PATHS_ENV not found. Copy config/paths.env.example to config/paths.env and edit it for your setup (see README Quick Setup)." >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+source "$PATHS_ENV"
+: "${TMP_BASE:?TMP_BASE not set in $PATHS_ENV}"
+: "${DISK_CHECK_PATH:?DISK_CHECK_PATH not set in $PATHS_ENV}"
+: "${MIN_FREE_GB:?MIN_FREE_GB not set in $PATHS_ENV}"
+: "${DSISTUDIO_BUILD_SCRIPT:?DSISTUDIO_BUILD_SCRIPT not set in $PATHS_ENV}"
+: "${DSISTUDIO_IMAGES_DIR:?DSISTUDIO_IMAGES_DIR not set in $PATHS_ENV}"
 
 # DSI Studio is a special case, not a config/apps.conf row: it has no Docker
 # Hub repo with usable version tags, its GPU/CUDA build only exists as a
 # GitHub release asset, and per-project analyses pin to specific
 # dsi_studio_hou-<date>.sif paths under DSISTUDIO_SIF_DIR (see
 # dsi_studio_pipeline.py's _resolve_apptainer_image()) -- so unlike every
-# other app here, its output dir/naming can't be moved under
-# /data/local/container/ and files there must never be overwritten, only
-# added to.
-DSISTUDIO_BUILD_SCRIPT="${DSISTUDIO_BUILD_SCRIPT:-/data/local/software/dsistuido/installation/apptainer/build_image.sh}"
-DSISTUDIO_IMAGES_DIR="${DSISTUDIO_IMAGES_DIR:-/data/local/software/apptainer_images}"
-DSISTUDIO_SIF_DIR="${DSISTUDIO_SIF_DIR:-$DSISTUDIO_IMAGES_DIR/dsi_studio}"
+# other app here, its output dir/naming can't be moved under CONTAINER_DIR
+# and files there must never be overwritten, only added to.
+DSISTUDIO_SIF_DIR="$DSISTUDIO_IMAGES_DIR/dsi_studio"
 DSISTUDIO_REPO="frankyeh/DSI-Studio"
 DSISTUDIO_ASSET_NAME="dsi_studio_ubuntu2204.zip"
 
